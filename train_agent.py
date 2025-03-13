@@ -85,9 +85,6 @@ def train():
         if episode % 500 == 0:
             avg_reward = np.mean(total_rewards[-500:])  # Average of the last 100 episodes
             print(f"Episode {episode}: Steps: {step_count}, Avg Reward: {avg_reward:.2f}, Epsilon: {EPSILON:.4f}")
-            with open("q_table.pkl", "wb") as f:
-                pickle.dump(Q_table, f)
-            print("Checkpoint saved: q_table.pkl")
             
     # Final Q-table save
     with open("q_table.pkl", "wb") as f:
