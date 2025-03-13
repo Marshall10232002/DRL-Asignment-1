@@ -7,7 +7,7 @@ from tqdm import tqdm
 # Hyperparameters
 NUM_EPISODES = 5000
 N_STEPS = 2         # n-step return horizon
-ALPHA = 0.1         # Learning rate
+ALPHA = 0.15         # Learning rate
 GAMMA = 0.9        # Discount factor
 EPSILON = 1.0       # Starting exploration rate
 EPSILON_MIN = 0.05  # Minimum exploration rate

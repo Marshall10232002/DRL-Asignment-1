@@ -82,7 +82,7 @@ class SimpleTaxiEnv():
             elif action == 5:  # DROPOFF
                 if self.passenger_picked_up:
                     if self.taxi_pos == self.destination:
-                        reward += 5000
+                        reward += 0
                         return self.get_state(), reward -0.1, True, {}
                     else:
                         reward -=10
@@ -91,11 +91,11 @@ class SimpleTaxiEnv():
                 else:
                     reward -=1
                     
-        reward -= 0.1  
+        reward -= 0  
 
         self.current_fuel -= 1
         if self.current_fuel <= 0:
-            return self.get_state(), reward -10, True, {}
+            return self.get_state(), reward , True, {}
 
         
 
