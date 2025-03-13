@@ -5,13 +5,13 @@ from  complete_env import SimpleTaxiEnv
 from tqdm import tqdm
 
 # Hyperparameters
-NUM_EPISODES = 50000
+NUM_EPISODES = 10000
 N_STEPS = 2         # n-step return horizon
 ALPHA = 0.1         # Learning rate
 GAMMA = 0.9        # Discount factor
 EPSILON = 1.0       # Starting exploration rate
 EPSILON_MIN = 0.05  # Minimum exploration rate
-EPSILON_DECAY = 0.9999  # Decay factor per episode
+EPSILON_DECAY = 0.9993  # Decay factor per episode
 
 # Q-table: keys are states (tuples) and values are np.arrays of length 6 (one per action)
 Q_table = {}
