@@ -5,7 +5,7 @@ from  complete_env import SimpleTaxiEnv
 from tqdm import tqdm
 
 # Hyperparameters
-NUM_EPISODES = 10000
+NUM_EPISODES = 5000
 N_STEPS = 2         # n-step return horizon
 ALPHA = 0.1         # Learning rate
 GAMMA = 0.9        # Discount factor
