@@ -2,7 +2,7 @@ import gymnasium as gym
 import numpy as np
 import random
 from gymnasium import spaces
-from simple_custom_taxi_env import SimpleTaxiEnv  # make sure this matches your file name
+from complete_env import SimpleTaxiEnv  # make sure this matches your file name
 from stable_baselines3 import DQN
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback
