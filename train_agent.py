@@ -20,20 +20,20 @@ print("GPU Name:", torch.cuda.get_device_name(0) if torch.cuda.is_available() el
 # ---------------------------
 # Hyperparameters (modifiable)
 # ---------------------------
-num_episodes = 1000         # Total episodes (used to approximate total timesteps)
+num_episodes = 3000         # Total episodes (used to approximate total timesteps)
 avg_episode_length = 5000    # Estimated average episode length (adjust if needed)
 total_timesteps = num_episodes * avg_episode_length
 
 gamma = 0.9
-learning_rate = 1.5e-2
-replay_buffer_size = 10000
+learning_rate = 2e-2
+replay_buffer_size = 1000000
 batch_size = 64
 target_update_interval = 500   # in steps
 
 # Exploration parameters:
 exploration_initial_eps = 1.0
 exploration_final_eps = 0.1
-exploration_fraction = 0.8
+exploration_fraction = 0.9
 
 # Checkpoint saving frequency (in episodes)
 checkpoint_frequency = 1000  # every 1000 episodes
@@ -134,7 +134,7 @@ if __name__ == "__main__":
         return Monitor(env)  # ✅ Wrap each individual environment
 
     # Create multiple environments wrapped with Monitor
-    env = SubprocVecEnv([make_env for _ in range(1)])
+    env = SubprocVecEnv([make_env for _ in range(10)])
     model = DQN(
         "MlpPolicy",
         env,
