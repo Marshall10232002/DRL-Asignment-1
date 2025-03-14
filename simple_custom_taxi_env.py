@@ -66,7 +66,7 @@ class SimpleTaxiEnv():
         
         if action in [0, 1, 2, 3]:  # Only movement actions should be checked
             if (next_row, next_col) in self.obstacles or not (0 <= next_row < self.grid_size and 0 <= next_col < self.grid_size):
-                reward -=5
+                reward -=50
             else:
                 self.taxi_pos = (next_row, next_col)
                 if self.passenger_picked_up:
@@ -91,7 +91,7 @@ class SimpleTaxiEnv():
                 else:
                     reward -=1
                     
-        reward -= 0  
+        reward -= 0.1  
 
         self.current_fuel -= 1
         if self.current_fuel <= 0:

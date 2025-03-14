@@ -1,96 +1,157 @@
-import random
+import gymnasium as gym
 import numpy as np
-import pickle
-from  complete_env import SimpleTaxiEnv
-from tqdm import tqdm
+import random
+from gymnasium import spaces
+from simple_custom_taxi_env import SimpleTaxiEnv  # make sure this matches your file name
+from stable_baselines3 import DQN
+from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback
+from stable_baselines3.common.vec_env import SubprocVecEnv
+import torch
 
-# Hyperparameters
-NUM_EPISODES = 5000
-N_STEPS = 2         # n-step return horizon
-ALPHA = 0.15         # Learning rate
-GAMMA = 0.9        # Discount factor
-EPSILON = 1.0       # Starting exploration rate
-EPSILON_MIN = 0.05  # Minimum exploration rate
-EPSILON_DECAY = 0.9993  # Decay factor per episode
+# ---------------------------
+# Print PyTorch and GPU Info
+# ---------------------------
+print("PyTorch Version:", torch.__version__)
+print("CUDA Available:", torch.cuda.is_available())
+print("CUDA Version:", torch.version.cuda)
+print("GPU Name:", torch.cuda.get_device_name(0) if torch.cuda.is_available() else "No GPU detected")
 
-# Q-table: keys are states (tuples) and values are np.arrays of length 6 (one per action)
-Q_table = {}
+# ---------------------------
+# Hyperparameters (modifiable)
+# ---------------------------
+num_episodes = 1000         # Total episodes (used to approximate total timesteps)
+avg_episode_length = 5000    # Estimated average episode length (adjust if needed)
+total_timesteps = num_episodes * avg_episode_length
 
-def get_Q(state):
-    """Return Q-values for a state, initializing if needed."""
-    if state not in Q_table:
-        Q_table[state] = np.zeros(6)
-    return Q_table[state]
+gamma = 0.9
+learning_rate = 1.5e-2
+replay_buffer_size = 10000
+batch_size = 64
+target_update_interval = 500   # in steps
 
-def choose_action(state, epsilon):
-    """Epsilon-greedy action selection."""
-    if random.random() < epsilon:
-        return random.choice(range(6))
-    else:
-        return int(np.argmax(get_Q(state)))
+# Exploration parameters:
+exploration_initial_eps = 1.0
+exploration_final_eps = 0.1
+exploration_fraction = 0.8
 
-def train():
-    global EPSILON
-    env = SimpleTaxiEnv(fuel_limit=5000)
-    total_rewards = []
+# Checkpoint saving frequency (in episodes)
+checkpoint_frequency = 1000  # every 1000 episodes
 
-    for episode in tqdm(range(NUM_EPISODES)):
-        state, _ = env.reset()
-        buffer = []  # To store transitions: each element is (state, action, reward)
-        done = False
-        step_count = 0
-        episode_reward = 0
+# Environment parameters
+fuel_limit = 5000
+min_grid_size = 5
+max_grid_size = 5
 
-        while not done:
-            action = choose_action(state, EPSILON)
-            next_state, reward, done, _ = env.step(action)
-            episode_reward += reward
-            buffer.append((state, action, reward))
-            
-            # When enough transitions have been collected, perform an n-step update for the oldest transition
-            if len(buffer) >= N_STEPS:
-                G = 0
-                for i in range(N_STEPS):
-                    G += (GAMMA ** i) * buffer[i][2]
-                # If the episode is not finished, add the estimated future reward from the state reached after n steps
-                if not done:
-                    G += (GAMMA ** N_STEPS) * np.max(get_Q(next_state))
-                s0, a0, _ = buffer[0]
-                Q_old = get_Q(s0)[a0]
-                Q_table[s0][a0] = Q_old + ALPHA * (G - Q_old)
-                # Remove the oldest transition from the buffer
-                buffer.pop(0)
-            
-            state = next_state
-            step_count += 1
-            
-            if done:
-                # Flush remaining transitions in the buffer using a shorter horizon
-                for i in range(len(buffer)):
-                    G = 0
-                    for j in range(len(buffer) - i):
-                        G += (GAMMA ** j) * buffer[i+j][2]
-                    s_i, a_i, _ = buffer[i]
-                    Q_old = get_Q(s_i)[a_i]
-                    Q_table[s_i][a_i] = Q_old + ALPHA * (G - Q_old)
-                break
-        
-        total_rewards.append(episode_reward)
-        # Decay the exploration rate
-        if EPSILON > EPSILON_MIN:
-            EPSILON *= EPSILON_DECAY
-            EPSILON = max(EPSILON, EPSILON_MIN)
-        
-        # Print progress and save a checkpoint every 100 episodes
-        if episode % 500 == 0:
-            avg_reward = np.mean(total_rewards[-500:])  # Average of the last 100 episodes
-            print(f"Episode {episode}: Steps: {step_count}, Avg Reward: {avg_reward:.2f}, Epsilon: {EPSILON:.4f}")
-            
-    # Final Q-table save
-    with open("q_table.pkl", "wb") as f:
-        pickle.dump(Q_table, f)
-    print("Training finished. Final Q-table saved as q_table.pkl")
+# ---------------------------
+# Gymnasium Wrapper for SimpleTaxiEnv
+# ---------------------------
+class TaxiEnvGymWrapper(gym.Env):
+    """
+    A Gymnasium wrapper for the custom taxi environment.
+    Each episode randomizes the grid size between min_grid_size and max_grid_size.
+    The observation is a 16-element vector where the first 10 elements (taxi and station coordinates)
+    are normalized by the grid size.
+    """
+    def __init__(self, fuel_limit=5000, min_grid_size=5, max_grid_size=10):
+        super(TaxiEnvGymWrapper, self).__init__()
+        self.fuel_limit = fuel_limit
+        self.min_grid_size = min_grid_size
+        self.max_grid_size = max_grid_size
+        self.current_env = None
+        self.current_grid_size = None
 
-if __name__ == '__main__':
-    train()
+        # Define observation space:
+        # - First 10 values (coordinates) are normalized to [0, 1]
+        # - Last 6 values are binary flags (0 or 1)
+        low = np.array([0.0]*10 + [0]*6, dtype=np.float32)
+        high = np.array([1.0]*10 + [1]*6, dtype=np.float32)
+        self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
+        self.action_space = spaces.Discrete(6)
 
+    def reset(self, **kwargs):
+        grid_size = random.randint(self.min_grid_size, self.max_grid_size)
+        self.current_grid_size = grid_size
+        self.current_env = SimpleTaxiEnv(grid_size=grid_size, fuel_limit=self.fuel_limit)
+        state, _ = self.current_env.reset()
+        state = self.normalize_state(state, grid_size)
+        # Gymnasium reset() must return (observation, info)
+        return np.array(state, dtype=np.float32), {}
+
+    def step(self, action):
+        obs, reward, done, info = self.current_env.step(action)
+        obs = self.normalize_state(obs, self.current_grid_size)
+        # Gymnasium step() must return (obs, reward, terminated, truncated, info)
+        return np.array(obs, dtype=np.float32), reward, done, False, info
+
+    def render(self, mode='human'):
+        taxi_row, taxi_col, *_ = self.current_env.get_state()
+        self.current_env.render_env((taxi_row, taxi_col))
+
+    def normalize_state(self, state, grid_size):
+        state = np.array(state, dtype=np.float32)
+        state[:10] = state[:10] / grid_size
+        return state
+
+# ---------------------------
+# Custom Callback for Logging Training Statistics
+# ---------------------------
+class TrainStatsCallback(BaseCallback):
+    def __init__(self, verbose=0):
+        super(TrainStatsCallback, self).__init__(verbose)
+        self.episode_rewards = []
+        self.episode_lengths = []
+        self.episode_count = 0
+
+    def _on_step(self) -> bool:
+        # The Monitor wrapper adds an "episode" key in info when an episode finishes.
+        infos = self.locals.get("infos", [])
+        for info in infos:
+            if "episode" in info:
+                self.episode_count += 1
+                self.episode_rewards.append(info["episode"]["r"])
+                self.episode_lengths.append(info["episode"]["l"])
+                if self.episode_count % 100 == 0:
+                    avg_reward = np.mean(self.episode_rewards[-100:])
+                    avg_length = np.mean(self.episode_lengths[-100:])
+                    print(f"Episode {self.episode_count} - Avg Reward: {avg_reward:.2f}, Avg Length: {avg_length:.2f}")
+        return True
+
+
+# ---------------------------
+# Checkpoint Callback
+# ---------------------------
+checkpoint_callback = CheckpointCallback(
+    save_freq=checkpoint_frequency * avg_episode_length,  # approximate timesteps per checkpoint
+    save_path='./',
+    name_prefix='dqn_taxi_checkpoint'
+)
+
+if __name__ == "__main__":
+    from stable_baselines3.common.vec_env import SubprocVecEnv
+    def make_env():
+        env = TaxiEnvGymWrapper(fuel_limit=fuel_limit, min_grid_size=min_grid_size, max_grid_size=max_grid_size)
+        return Monitor(env)  # ✅ Wrap each individual environment
+
+    # Create multiple environments wrapped with Monitor
+    env = SubprocVecEnv([make_env for _ in range(1)])
+    model = DQN(
+        "MlpPolicy",
+        env,
+        learning_rate=learning_rate,
+        buffer_size=replay_buffer_size,
+        learning_starts=1000,
+        batch_size=batch_size,
+        gamma=gamma,
+        train_freq=(10, "step"),
+        target_update_interval=target_update_interval,
+        exploration_fraction=exploration_fraction,
+        exploration_initial_eps=exploration_initial_eps,
+        exploration_final_eps=exploration_final_eps,
+        verbose=1,
+        tensorboard_log="./dqn_taxi_tensorboard/"
+    )
+
+    model.learn(total_timesteps=total_timesteps, callback=[checkpoint_callback, TrainStatsCallback()])
+    model.save("dqn_taxi_model")
+    print("Training completed and model saved as dqn_taxi_model.zip")
